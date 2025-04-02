@@ -27,8 +27,8 @@ class Inputs(BaseModel):
     # Paths
     base_dir: str
     run_files_path: str
-    hpc_name: str
-    hpc_tar_path: str
+    hpc_name: Optional[str] = None
+    hpc_tar_path: Optional[str] = None # if None it would skip copying to hpc
 
     # Execution
     run_on_hpc: bool

@@ -1,0 +1,33 @@
+{
+  "force_field_params": {
+    "charges": {
+      "C": 0.0,
+      "H": 0.417,
+      "O": -0.834,
+      "Zn": 2.0,
+      "I": -1.0
+    },
+    "vdw_params": {
+      "C": [0.055, 3.4],
+      "H": [0.03, 2.5],
+      "O": [0.152, 3.15],
+      "Zn": [0.1, 2.1],
+      "I": [0.4, 4.0]
+    }
+  },
+  "n_layers": 3,
+  "lx": 50,
+  "ly": 20,
+  "lx_spacing": 15,
+  "conc_ZnI2": 1.0,
+  "conc_I": 0.0,
+  "density_water": 1.0,
+  "layer_spacing": 10,
+  "r_vdw": 2.0,
+  "water_thickness": 0.0,
+  "base_dir": "~/projects/others/zhe_liu/sims",
+  "run_files_path": "~/projects/others/zhe_liu/run_files",
+  "hpc_name": "hpc_vigra",
+  "hpc_tar_path": "~/projects/zhe_liu/ion_trans/sims",
+  "run_on_hpc": false
+}

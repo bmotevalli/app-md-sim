@@ -1,3 +1,17 @@
+"""
+@TODO:
+    Once debugged and worked fine, refactor this script into several components:
+    - proposed strucutre:
+        |- services
+            |- gen_models
+                |- graphene.py
+                |- water.py
+                |- electorlyte_sys.py
+                |- ...
+            |- hpc
+"""
+
+
 import numpy as np
 from ase import Atoms
 from ase.io import write as write_ase
@@ -9,6 +23,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
 from app_md_sim.models.inputs import Inputs, ForceFieldParams
 
@@ -368,6 +383,8 @@ end structure
 
     Packmol.run_packmol(os.path.join(working_dir, "graphene_electrolyte_packmol.inp"))
 
+    # Adding a delay to ensure packmol has written the file.
+    time.sleep(1)
     add_cryst1_to_pdb(
         pdb_file=os.path.join(working_dir, "graphene_electrolyte.pdb"),
         lx_cell=lx_cell,

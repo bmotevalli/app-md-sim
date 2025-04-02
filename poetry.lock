@@ -515,14 +515,14 @@ referencing = ">=0.31.0"
 
 [[package]]
 name = "julia"
-version = "0.5.7"
+version = "0.6.2"
 description = "Julia/Python bridge with IPython support."
 optional = false
-python-versions = "*"
+python-versions = ">=3.4"
 groups = ["main"]
 files = [
-    {file = "julia-0.5.7-py2.py3-none-any.whl", hash = "sha256:d30019cac7332e08f4670730e10e473727c4a0a63a9a2f9e2ba77fa6beafcac5"},
-    {file = "julia-0.5.7.tar.gz", hash = "sha256:f24b9788f3e30f33d53fc8854f2fcc54193c84412149cfbc652bde2edd6e8a85"},
+    {file = "julia-0.6.2-py2.py3-none-any.whl", hash = "sha256:90752f71376fdb9919439d20496c2dab24486dfa4fe8a831d6dd14a1bcbc04d1"},
+    {file = "julia-0.6.2.tar.gz", hash = "sha256:35eefc030671392b79ba0e1898b7103ed1286ad044783c4cadc99d4401c368e3"},
 ]
 
 [package.extras]
@@ -1832,4 +1832,4 @@ watchmedo = ["PyYAML (>=3.10)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "880e5e0b644a8384315979e25a4fa0bfc09d34068eda54c9d31a2690f4d644f4"
+content-hash = "2812d9ae3e07bdeca169adaff3bbf0ac89c9bb699e310e5497b233442e9222ad"
