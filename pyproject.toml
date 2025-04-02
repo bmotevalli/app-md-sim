@@ -1,0 +1,26 @@
+[project]
+name = "app-md-sim"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Ben Motevalli",email = "b.motevalli@gmail.com"}
+]
+readme = "README.md"
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = ">=3.12"
+numpy = "^2.0.0"
+ase = "^3.22.1"
+julia = "^0.5.7"
+pydantic = "^2.8.2"
+streamlit = "^1.37.1"
+typer = "^0.15.2"
+
+[tool.poetry]
+packages = [{include = "app_md_sim", from = "src"}]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
