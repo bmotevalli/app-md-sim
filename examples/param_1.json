@@ -21,13 +21,14 @@
   "lx_spacing": 15,
   "conc_ZnI2": 1.0,
   "conc_I": 0.0,
-  "density_water": 1.0,
+  "density_water": 0.95,
   "layer_spacing": 10,
-  "r_vdw": 2.0,
+  "r_vdw": 3.0,
   "water_thickness": 0.0,
-  "base_dir": "~/projects/others/zhe_liu/sims",
-  "run_files_path": "~/projects/others/zhe_liu/run_files",
+  "buffer_pack": 0.05,
+  "base_dir": "/home/mot032/projects/others/zhe_liu/sims",
+  "run_files_path": "/home/mot032/projects/others/zhe_liu/run_files",
   "hpc_name": "hpc_vigra",
-  "hpc_tar_path": "~/projects/zhe_liu/ion_trans/sims",
-  "run_on_hpc": false
+  "hpc_tar_path": "projects/zhe_liu/ion_trans/sims",
+  "run_on_hpc": true
 }

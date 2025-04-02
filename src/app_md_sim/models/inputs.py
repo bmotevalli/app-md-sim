@@ -23,6 +23,7 @@ class Inputs(BaseModel):
     layer_spacing: float
     r_vdw: float
     water_thickness: Optional[float] = 0.0
+    buffer_pack: Optional[float] = 0.0
 
     # Paths
     base_dir: str

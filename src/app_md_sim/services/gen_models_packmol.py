@@ -24,6 +24,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+from collections import defaultdict
 
 from app_md_sim.models.inputs import Inputs, ForceFieldParams
 
@@ -220,6 +221,32 @@ def add_cryst1_to_pdb(pdb_file, lx_cell, ly, total_height):
 
 
 
+def run_packmol(input_file, working_dir=None):
+    cmd = ["packmol"]
+    curr_dir = os.getcwd()
+
+    try:
+        if working_dir:
+            os.chdir(working_dir)
+            input_path = input_file
+        else:
+            input_path = input_file
+
+        with open(input_path, "r") as inp:
+            print(f"🧪 Running Packmol in {os.getcwd()} with input: {input_path}")
+            subprocess.run(cmd, stdin=inp, check=True)
+            print("✅ Packmol completed successfully.")
+    
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Packmol failed with return code {e.returncode}")
+    
+    except FileNotFoundError as e:
+        print(f"❌ File not found: {e}")
+    
+    finally:
+        os.chdir(curr_dir)
+
+
 def create_packmol_inp_graphene_multilayer_electrolyte(
         base_dir: Path,
         n_layers: int,
@@ -233,6 +260,7 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
         r_vdw: float = 2.0,
         water_thickness = 0.0,
         carbon_charge = 0.0,
+        buffer_pack = 0.0,
     ):
     """
     Creates the .pdb base files for multi-layered graphene and
@@ -273,16 +301,41 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
 
     print(f"The cell size is {graphene.get_cell()}")
 
+    # Original positions
+    water_pos = np.array([
+        [0.00, 0.00, 0.00],    # O
+        [0.96, 0.00, 0.00],    # H
+        [-0.32, 0.93, 0.00]    # H
+    ])
+
+    # Recenter around center of geometry (simple average of positions)
+    center = water_pos.mean(axis=0)
+    water_pos -= center
+
     water = Atoms(['O', 'H', 'H'],
-              positions=[[0, 0, 0], [0.96, 0, 0], [-0.32, 0.93, 0]])
+              positions=water_pos)
     zn = Atoms('Zn', positions=[[0, 0, 0]])
     iodine = Atoms('I', positions=[[0, 0, 0]])
 
 
     write_ase(os.path.join(working_dir, "graphene.pdb"), graphene)
+#     with open(os.path.join(working_dir,"water.pdb"), 'w') as f:
+#         f.write("""\
+# ATOM      1  O   HOH     1      12.345  23.456  34.567   1.00  0.00
+# ATOM      2  H1  HOH     1      12.500  23.600  34.700   1.00  0.00
+# ATOM      3  H2  HOH     1      12.200  23.300  34.400   1.00  0.00
+# END
+# """)
+
     write_ase(os.path.join(working_dir,"water.pdb"), water)
     write_ase(os.path.join(working_dir,"Zn.pdb"), zn)
     write_ase(os.path.join(working_dir,"I.pdb"), iodine)
+
+    # write_ase(os.path.join(working_dir, "graphene.xyz"), graphene)
+    # write_ase(os.path.join(working_dir,"water.xyz"), water)
+    # write_ase(os.path.join(working_dir,"Zn.xyz"), zn)
+    # write_ase(os.path.join(working_dir,"I.xyz"), iodine)
+
 
 
     graphene_pos = graphene.get_positions()
@@ -347,6 +400,7 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
     print(f"Total height: {total_height}")
 
 
+
     packmol_str = f"""
 tolerance 2.0
 filetype pdb
@@ -363,25 +417,27 @@ end structure
 # Zn ions
 structure Zn.pdb
   number {n_ZnI2}
-  inside box 0.0 0.0 0.0  {lx_cell} {ly} {total_height}
+  inside box {buffer_pack} {buffer_pack} {buffer_pack}  {lx_cell - buffer_pack} {ly - buffer_pack} {total_height - buffer_pack}
 end structure
 
 # I ions
 structure I.pdb
   number {n_ZnI2 * 2 + n_I}
-  inside box 0.0 0.0 0.0  {lx_cell} {ly} {total_height}
+  inside box {buffer_pack} {buffer_pack} {buffer_pack}  {lx_cell - buffer_pack} {ly - buffer_pack} {total_height - buffer_pack}
 end structure
 
 # Water molecules
 structure water.pdb
   number {n_water}
-  inside box 0.0 0.0 0.0  {lx_cell} {ly} {total_height}
+  inside box {buffer_pack} {buffer_pack} {buffer_pack}  {lx_cell - buffer_pack} {ly - buffer_pack} {total_height - buffer_pack}
 end structure
 """
     with open(os.path.join(working_dir, "graphene_electrolyte_packmol.inp"), 'w') as f:
         f.write(packmol_str)
 
-    Packmol.run_packmol(os.path.join(working_dir, "graphene_electrolyte_packmol.inp"))
+    # Packmol.run_packmol(os.path.join(working_dir, "graphene_electrolyte_packmol.inp"))
+
+    run_packmol("graphene_electrolyte_packmol.inp", working_dir)
 
     # Adding a delay to ensure packmol has written the file.
     time.sleep(1)
@@ -393,24 +449,6 @@ end structure
     )
 
     return folder
-
-
-
-
-def run_pack_mol(base_dir, folder):
-    import subprocess
-    curr_dir = os.getcwd()
-    try:       
-        os.chdir(os.path.join(base_dir, "graphene_n3_s10_lx50_ly20_lxCell100_wt15.0_ZnI2_1.0"))
-
-        # Run Julia command from Python to execute Packmol.jl
-        subprocess.run(["julia", "-e", f'using Packmol; run_packmol("graphene_electrolyte_packmol.inp")'], check=True)
-
-        print("Packmol execution completed.")
-    except Exception as e:
-        print(f"An error occured for case: {folder}")
-    finally:
-        os.chdir(curr_dir)
 
 
 def parse_pdb_molecule_ids(pdb_file):
@@ -456,6 +494,57 @@ def parse_pdb_molecule_ids(pdb_file):
     return molecule_ids
 
 
+# def adjust_water_bond_lengths(atoms, molecule_ids, target_OH_length=0.96):
+#     """
+#     Adjusts the O-H bond lengths of water molecules to a target value.
+
+#     Parameters:
+#     -----------
+#     atoms : ASE Atoms object
+#     molecule_ids : list[int]
+#     target_OH_length : float
+#     """
+#     positions = atoms.get_positions()
+#     symbols = atoms.get_chemical_symbols()
+#     new_positions = positions.copy()
+
+#     molecule_dict = defaultdict(list)
+#     for i, mol_id in enumerate(molecule_ids):
+#         molecule_dict[mol_id].append(i)
+
+#     count = 0
+#     for atom_indices in molecule_dict.values():
+#         if len(atom_indices) == 3:
+#             o_idx = [i for i in atom_indices if symbols[i] == 'O']
+#             h_idx = [i for i in atom_indices if symbols[i] == 'H']
+
+#             if len(o_idx) == 1 and len(h_idx) == 2:
+#                 o = new_positions[o_idx[0]]
+#                 h1 = new_positions[h_idx[0]]
+#                 h2 = new_positions[h_idx[1]]
+
+#                 # Rescale both O–H vectors to target length
+#                 h1_vec = h1 - o
+#                 h2_vec = h2 - o
+
+#                 if np.linalg.norm(h1_vec) > target_OH_length:
+#                     print(np.linalg.norm(h1_vec))
+#                     h1_new = o + target_OH_length * h1_vec / np.linalg.norm(h1_vec)
+#                     new_positions[h_idx[0]] = h1_new
+#                     count+=1
+#                 if np.linalg.norm(h2_vec) > target_OH_length:
+#                     print(np.linalg.norm(h2_vec))
+#                     h2_new = o + target_OH_length * h2_vec / np.linalg.norm(h2_vec)
+#                     new_positions[h_idx[1]] = h2_new
+#                     count+=1
+    
+#     print(f"Number of modifications: {count}")
+
+
+#     atoms.set_positions(new_positions)
+#     return atoms
+
+
 def write_lammps_data_from_pdb(pdb_file, charges, vdw_params, filename="graphene_electrolyte.data"):
     """
     Reads a PDB file and writes a LAMMPS data file including custom charges, vdW parameters, and molecular topology.
@@ -477,11 +566,16 @@ def write_lammps_data_from_pdb(pdb_file, charges, vdw_params, filename="graphene
     # Extract molecule IDs from the .pdb file
     molecule_ids = parse_pdb_molecule_ids(pdb_file)
 
+    # Adjust O-H bond lengths to exactly 0.96 Å
+    # atoms = adjust_water_bond_lengths(atoms, molecule_ids, target_OH_length=0.99)
+
     # Extract basic system information
     n_atoms = len(atoms)
     positions = atoms.get_positions()
-    unique_symbols = list(set(atoms.get_chemical_symbols()))
+    unique_symbols = sorted(set(atoms.get_chemical_symbols()))
     atom_types = {symbol: i + 1 for i, symbol in enumerate(unique_symbols)}
+
+    print(f"Atom types in {pdb_file}: {atom_types}")
 
     # Extract box dimensions
     cell = atoms.get_cell()
@@ -605,8 +699,13 @@ def copy_files_to_hpc(source_path, hpc_name, dest_path):
     ]
 
     # SCP command to copy files
-    scp_command = [
-        "scp", "-r", source_path, f"{hpc_name}:~/{dest_path}"
+    # scp_command = [
+    #     "scp", "-r", f"{source_path.rstrip('/')}/.", f"{hpc_name}:~/{dest_path}"
+    # ]
+
+    # Better copy for contents of a folder
+    rsync_command = [
+        "rsync", "-av", f"{source_path.rstrip('/')}/", f"{hpc_name}:~/{dest_path}/"
     ]
 
     try:
@@ -616,7 +715,8 @@ def copy_files_to_hpc(source_path, hpc_name, dest_path):
 
         # Copy files
         print(f"Copying {source_path} to {hpc_name}:~/{dest_path}...")
-        subprocess.run(scp_command, check=True)
+        # subprocess.run(scp_command, check=True)
+        subprocess.run(rsync_command, check=True)
 
         print(f"✅ Successfully copied {source_path} to {hpc_name}:~/{dest_path}")
     
@@ -624,6 +724,44 @@ def copy_files_to_hpc(source_path, hpc_name, dest_path):
         print(f"❌ Error: Command failed with return code {e.returncode}")
     except FileNotFoundError:
         print("❌ Error: SSH or SCP command not found. Ensure SSH is installed.")
+
+
+def sync_entire_dir_from_hpc(hpc_name, base_remote_dir, base_local_dir):
+    """
+    Syncs an entire directory tree from HPC to local using rsync, copying only
+    newer or missing files.
+
+    Parameters:
+    -----------
+    hpc_name : str
+        SSH alias for the HPC (e.g., "hpc_vigra").
+    base_remote_dir : str
+        Base directory on the HPC (relative to home, e.g., "projects/md-sim/sims").
+    base_local_dir : str
+        Local base directory (e.g., "~/projects/md-sim/sims").
+    """
+    base_local_dir = Path(base_local_dir).expanduser().resolve()
+    base_local_dir.mkdir(parents=True, exist_ok=True)
+
+    remote_path = f"{hpc_name}:~/{base_remote_dir.rstrip('/')}/"
+    local_path = f"{str(base_local_dir)}/"
+
+    rsync_command = [
+        "rsync", "-avzu",  # a: archive, v: verbose, z: compress, u: only update if newer
+        "--progress",
+        remote_path,
+        local_path
+    ]
+
+    print(f"🔄 Syncing from {remote_path} to {local_path}")
+    try:
+        subprocess.run(rsync_command, check=True)
+        print(f"✅ Sync complete.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ rsync failed: {e}")
+    except FileNotFoundError:
+        print("❌ Error: rsync not found. Ensure rsync is installed on your system.")
+
 
 
 def submit_job_to_hpc(hpc_name, hpc_tar_path):
@@ -643,7 +781,8 @@ def submit_job_to_hpc(hpc_name, hpc_tar_path):
         SLURM job ID if submission was successful, else None.
     """
     # Construct SSH command to submit the job
-    run_cmd = ["ssh", hpc_name, "sbatch", f"~/{hpc_tar_path}/run.sh"]
+    print(f"Running job at path: ~/{hpc_tar_path}")
+    run_cmd = ["ssh", hpc_name, f"cd ~/{hpc_tar_path} && sbatch run.sh"]
 
     try:
         # Submit the job and capture the output
@@ -684,7 +823,8 @@ def submit_run(
     hpc_name: str = "hpc_vigra",
     run_files_path: Path = None,
     hpc_tar_path: str = None,
-    run_on_hpc: bool = False
+    run_on_hpc: bool = False,
+    buffer_pack: float = 0.0
 ):
     """
     The function does followings:
@@ -730,9 +870,10 @@ def submit_run(
         r_vdw = r_vdw,
         water_thickness = water_thickness,
         carbon_charge = carbon_charge,
+        buffer_pack=buffer_pack,
     )
 
-    run_pack_mol(base_dir=base_dir, folder=folder)
+    # run_pack_mol(base_dir=base_dir, folder=folder)
 
     if force_field_params is None:
         raise ValueError(f"Force field params are not defined. Not being able to proceed further and generate lammps data.")
@@ -791,6 +932,7 @@ def run_from_config(config: Inputs):
         layer_spacing=config.layer_spacing,
         r_vdw=config.r_vdw,
         water_thickness=config.water_thickness,
+        buffer_pack=config.buffer_pack,
         hpc_name=config.hpc_name,
         run_files_path=config.run_files_path,
         hpc_tar_path=config.hpc_tar_path,
