@@ -1,16 +1,28 @@
-from typing import Optional, Dict, Tuple
+from enum import Enum
+from typing import Optional, Dict, Tuple, List
 from pydantic import BaseModel
 import json
 from pathlib import Path
 
+class FuncGroupType(str,Enum):
+    OH = 'OH'
+    O  = 'O'
 class ForceFieldParams(BaseModel):
     charges: Dict[str, float]
     vdw_params: Dict[str, Tuple[float, float]]
     pair_interactions: Optional[dict] = None
 
 
+class FunctionalGroup(BaseModel):
+    name: FuncGroupType
+    charges: Optional[Dict[str, float]] = {}
+    ratio: float
+    
+
+
 class Inputs(BaseModel):
     force_field_params: ForceFieldParams
+    func_groups: Optional[List[FunctionalGroup]] = []
 
     # Model parameters
     n_layers: int
@@ -21,6 +33,7 @@ class Inputs(BaseModel):
     conc_I: Optional[float] = 0.0
     density_water: Optional[float] = 1.0
     layer_spacing: float
+    displace_x: float
     r_vdw: float
     water_thickness: Optional[float] = 0.0
     buffer_pack: Optional[float] = 0.0

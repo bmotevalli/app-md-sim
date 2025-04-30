@@ -16,6 +16,7 @@ julia = "0.6.2"
 pydantic = "^2.8.2"
 streamlit = "^1.37.1"
 typer = "^0.15.2"
+scipy = "^1.15.2"
 
 [tool.poetry]
 packages = [{include = "app_md_sim", from = "src"}]

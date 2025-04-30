@@ -60,3 +60,15 @@ Back in python you may need to do following:
 >>> import julia
 >>> julia.install()
 ```
+
+# RUN CLI
+
+command: `md-sim --help`
+
+command: `md-sim run examples/param_1.json`
+
+where, examples/param_1.json is the config file containing all required inputs.
+
+command: `md-sim sync examples/param_1.json`
+
+where, examples/param_1.json is the same input file used to generate the models and submit runs.

@@ -11,9 +11,9 @@
             |- hpc
 """
 
-
+from typing import List
 import numpy as np
-from ase import Atoms
+from ase import Atoms, Atom
 from ase.io import write as write_ase
 import os
 from julia import Packmol
@@ -25,11 +25,21 @@ import shutil
 import subprocess
 import time
 from collections import defaultdict
+from scipy.spatial import cKDTree
 
-from app_md_sim.models.inputs import Inputs, ForceFieldParams
+from app_md_sim.models.inputs import Inputs, ForceFieldParams, FunctionalGroup, FuncGroupType
 
 
-def create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing=3.35, carbon_charge=0.0):
+def create_graphene_system(
+        n_layers, 
+        lx, 
+        ly, 
+        lx_spacing, 
+        layer_spacing=3.35, 
+        carbon_charge=0.0,
+        displace_x=0.0,
+        func_groups: List[FunctionalGroup] = []
+    ):
     """
     Create graphene system with custom dimensions and assign charges to carbon atoms if required.
 
@@ -47,6 +57,8 @@ def create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing=3.35, car
         Interlayer spacing in Angstroms (default: 3.35 Å).
     carbon_charge : float
         Charge to assign to each carbon atom (default: 0.0 for neutral graphene).
+    displace_x : float
+        It displaces odd layers to create channels of graphene layers
 
     Returns:
     --------
@@ -63,6 +75,20 @@ def create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing=3.35, car
     # Create multilayer graphene structure
     atoms = create_multilayer_graphene(n_layers, nx, ny, layer_spacing)
 
+    # This is to create channels of graphene when displace_x is flagged
+    if displace_x != 0.0:
+        positions = atoms.get_positions()
+        for layer in range(n_layers):
+            if layer % 2 == 1:
+                # Get z coordinate of this layer
+                z_val = layer * layer_spacing
+                # Find atom indices in this layer (within small tolerance)
+                toler = 0.4
+                indices = np.where((positions[:, 2] >= z_val - toler) & (positions[:, 2] < z_val + toler))[0]
+                positions[indices, 0] += displace_x
+
+        atoms.set_positions(positions)
+
     if abs(carbon_charge) > 0.0001:
         atoms_2 = atoms.copy() # create_multilayer_graphene(n_layers, nx, ny, layer_spacing)
         # SET CHARGES:
@@ -78,6 +104,9 @@ def create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing=3.35, car
         positions[:,0] += max_atoms_2_x + 2 * lx_spacing
         atoms_2.set_positions(positions)
         atoms += atoms_2
+
+    if func_groups:
+        atoms = apply_functional_groups(atoms, n_layers, func_groups, layer_spacing)
 
     # Shifting atoms by lx_spacing to create space from origin 0.0
     positions = atoms.get_positions()
@@ -191,6 +220,133 @@ def create_multilayer_graphene(n_layers, nx=4, ny=4, layer_spacing=3.35):
     return atoms
 
 
+def apply_functional_groups(
+    atoms,
+    n_layers: int,
+    func_groups: List[FunctionalGroup],
+    layer_spacing=3.35,
+    z_tolerance=0.4,
+    seed=None
+):
+    """
+    Apply functional groups layer-by-layer with consistent ratio per layer,
+    ensuring no overlapping functionalization and randomized placement.
+
+    Parameters:
+    -----------
+    atoms : ASE Atoms
+    n_layers : int
+    func_groups : List[FunctionalGroup]
+    layer_spacing : float
+    z_tolerance : float
+    seed : int
+
+    Returns:
+    --------
+    ASE Atoms object (functionalized)
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    positions = np.array(atoms.get_positions())
+    symbols = atoms.get_chemical_symbols()
+    initial_charges = atoms.get_initial_charges()
+    if np.all(initial_charges == 0.0):
+        initial_charges = np.zeros(len(atoms))
+
+    new_atoms = atoms.copy()
+    charges = list(initial_charges)
+    used_carbon_indices = set()  # Track all used carbon atoms across layers
+
+    for layer in range(n_layers):
+        z_center = layer * layer_spacing
+        indices = np.where((positions[:, 2] >= z_center - z_tolerance) &
+                           (positions[:, 2] < z_center + z_tolerance))[0]
+        layer_carbons = [i for i in indices if symbols[i] == 'C' and i not in used_carbon_indices]
+        layer_positions = positions[layer_carbons]
+
+        for group in func_groups:
+            ratio = group.ratio
+            gtype = group.name
+            group_charges = group.charges or {}
+
+            if gtype == FuncGroupType.OH:
+                n_attach = int(len(layer_carbons) * ratio)
+                if n_attach == 0:
+                    continue
+
+                selected = np.random.choice(layer_carbons, size=n_attach, replace=False)
+
+                for idx in selected:
+                    c_pos = positions[idx]
+
+                    # Place O atom above carbon
+                    o_pos = c_pos + np.array([0, 0, 1.43])
+
+                    # Place H atom at ~104.5° angle in xz plane
+                    angle_deg = 104.5
+                    angle_rad = np.radians(angle_deg)
+                    oh_bond_length = 0.97
+                    dx = oh_bond_length * np.sin(angle_rad)
+                    dz = oh_bond_length * np.cos(angle_rad)
+                    h_pos = o_pos + np.array([dx, 0.0, -dz])  # tilt H back from O
+
+                    new_atoms += Atom('O', position=o_pos)
+                    new_atoms += Atom('H', position=h_pos)
+                    charges.append(group_charges.get('O', 0.0))
+                    charges.append(group_charges.get('H', 0.0))
+
+                    if 'C' in group_charges:
+                        charges[idx] = group_charges['C']
+
+                    used_carbon_indices.add(idx)
+
+            elif gtype == FuncGroupType.O:
+                n_target_pairs = int(len(layer_carbons) * ratio / 2)
+                if n_target_pairs == 0:
+                    continue
+
+                pairs = []
+                shuffled_indices = np.random.permutation(len(layer_positions))
+                for i_local in shuffled_indices:
+                    i_global = layer_carbons[i_local]
+                    if i_global in used_carbon_indices:
+                        continue
+                    for j_local in shuffled_indices:
+                        if i_local == j_local:
+                            continue
+                        j_global = layer_carbons[j_local]
+                        if j_global in used_carbon_indices:
+                            continue
+                        dist = np.linalg.norm(layer_positions[i_local] - layer_positions[j_local])
+                        if 1.3 < dist < 1.6:
+                            pairs.append((i_global, j_global))
+                            used_carbon_indices.update([i_global, j_global])
+                            break  # Only one partner per i
+                    if len(pairs) >= n_target_pairs:
+                        break
+
+                for i1, i2 in pairs:
+                    pos1 = positions[i1]
+                    pos2 = positions[i2]
+                    o_pos = 0.5 * (pos1 + pos2) + np.array([0, 0, 1.43])
+                    new_atoms += Atom('O', position=o_pos)
+                    charges.append(group_charges.get('O', 0.0))
+
+                    if 'C' in group_charges:
+                        charges[i1] = group_charges['C']
+                        charges[i2] = group_charges['C']
+
+            else:
+                raise ValueError(f"Unsupported functional group type: {gtype}")
+
+    new_atoms.set_initial_charges(charges)
+    return new_atoms
+
+
+
+
+
 def add_cryst1_to_pdb(pdb_file, lx_cell, ly, total_height):
     """
     Add CRYST1 record to define the periodic cell in a PDB file.
@@ -254,6 +410,7 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
         ly: float,
         lx_spacing: float,
         layer_spacing: float = 3.35,
+        displace_x: float = 0.0,
         conc_ZnI2: float = 0.0,
         conc_I: float = 0.0,
         density_water: float = 1.0,
@@ -261,6 +418,7 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
         water_thickness = 0.0,
         carbon_charge = 0.0,
         buffer_pack = 0.0,
+        func_groups: List[FunctionalGroup] = []
     ):
     """
     Creates the .pdb base files for multi-layered graphene and
@@ -295,7 +453,7 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
     # ===================================
     # CREATE PDB FILES
     # ===================================
-    graphene = create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing, carbon_charge=carbon_charge)
+    graphene = create_graphene_system(n_layers, lx, ly, lx_spacing, layer_spacing, carbon_charge, displace_x, func_groups)
 
     lx_cell = graphene.get_cell()[0,0]
 
@@ -339,7 +497,10 @@ def create_packmol_inp_graphene_multilayer_electrolyte(
 
 
     graphene_pos = graphene.get_positions()
-    graphene_z_positions = np.unique(graphene_pos[:,2])
+    symbols = graphene.get_chemical_symbols()
+    positions = np.array(graphene.get_positions())
+    carbon_positions = positions[np.array([s == 'C' for s in symbols])]
+    graphene_z_positions = np.unique(np.round(carbon_positions[:,2], decimals=2))
     min_z = np.min(graphene_z_positions)
     max_z = np.max(graphene_z_positions)
     x_start = np.min(graphene_pos[:,0])
@@ -466,6 +627,8 @@ def parse_pdb_molecule_ids(pdb_file):
         List of molecule IDs for each atom in the order they appear in the PDB file.
     """
     molecule_ids = []
+    next_id = 1
+    prev_mol_id = 1
 
     with open(pdb_file, "r") as f:
         for line in f:
@@ -477,10 +640,13 @@ def parse_pdb_molecule_ids(pdb_file):
                     try:
                         molecule_id = int(parts[4])
                     except ValueError:
+                        if next_id == 1:
+                            next_id = 2
                         if len(parts) > 11:
                             try:
                                 # Handle cases like "C 238" (strip non-numeric characters)
                                 molecule_id = int(parts[5])
+
                             except ValueError:
                                 # Handle cases like "C1238" (strip non-numeric characters)
                                 molecule_id_str = re.sub(r'[^0-9]', '', parts[4])  # Keep only digits
@@ -488,116 +654,80 @@ def parse_pdb_molecule_ids(pdb_file):
                                     molecule_id = int(molecule_id_str)
                                 else:
                                     raise ValueError(f"Could not parse molecule ID from line: {line.strip()}")
+                            
+                            if molecule_id != prev_mol_id:
+                                next_id += 1
+                                prev_mol_id = molecule_id
                     
-                    molecule_ids.append(molecule_id)
+
+                    molecule_ids.append(next_id)
 
     return molecule_ids
 
 
-# def adjust_water_bond_lengths(atoms, molecule_ids, target_OH_length=0.96):
-#     """
-#     Adjusts the O-H bond lengths of water molecules to a target value.
-
-#     Parameters:
-#     -----------
-#     atoms : ASE Atoms object
-#     molecule_ids : list[int]
-#     target_OH_length : float
-#     """
-#     positions = atoms.get_positions()
-#     symbols = atoms.get_chemical_symbols()
-#     new_positions = positions.copy()
-
-#     molecule_dict = defaultdict(list)
-#     for i, mol_id in enumerate(molecule_ids):
-#         molecule_dict[mol_id].append(i)
-
-#     count = 0
-#     for atom_indices in molecule_dict.values():
-#         if len(atom_indices) == 3:
-#             o_idx = [i for i in atom_indices if symbols[i] == 'O']
-#             h_idx = [i for i in atom_indices if symbols[i] == 'H']
-
-#             if len(o_idx) == 1 and len(h_idx) == 2:
-#                 o = new_positions[o_idx[0]]
-#                 h1 = new_positions[h_idx[0]]
-#                 h2 = new_positions[h_idx[1]]
-
-#                 # Rescale both O–H vectors to target length
-#                 h1_vec = h1 - o
-#                 h2_vec = h2 - o
-
-#                 if np.linalg.norm(h1_vec) > target_OH_length:
-#                     print(np.linalg.norm(h1_vec))
-#                     h1_new = o + target_OH_length * h1_vec / np.linalg.norm(h1_vec)
-#                     new_positions[h_idx[0]] = h1_new
-#                     count+=1
-#                 if np.linalg.norm(h2_vec) > target_OH_length:
-#                     print(np.linalg.norm(h2_vec))
-#                     h2_new = o + target_OH_length * h2_vec / np.linalg.norm(h2_vec)
-#                     new_positions[h_idx[1]] = h2_new
-#                     count+=1
-    
-#     print(f"Number of modifications: {count}")
-
-
-#     atoms.set_positions(new_positions)
-#     return atoms
-
-
-def write_lammps_data_from_pdb(pdb_file, charges, vdw_params, filename="graphene_electrolyte.data"):
+def write_lammps_data_from_pdb(pdb_file, charges, vdw_params, func_groups=[], filename="graphene_electrolyte.data"):
     """
     Reads a PDB file and writes a LAMMPS data file including custom charges, vdW parameters, and molecular topology.
-
-    Parameters:
-    -----------
-    pdb_file : str
-        Path to the PDB file.
-    charges : dict
-        A dictionary of charges for each atom type.
-    vdw_params : dict
-        A dictionary of vdW parameters (epsilon, sigma) for each atom type.
-    filename : str
-        Name of the output LAMMPS data file.
+    Automatically assigns charges to functional group atoms and their bonded carbon atoms.
+    Handles cases where no functional groups are present.
     """
-    # Read the PDB file
     atoms = read(pdb_file)
-
-    # Extract molecule IDs from the .pdb file
     molecule_ids = parse_pdb_molecule_ids(pdb_file)
 
-    # Adjust O-H bond lengths to exactly 0.96 Å
-    # atoms = adjust_water_bond_lengths(atoms, molecule_ids, target_OH_length=0.99)
-
-    # Extract basic system information
-    n_atoms = len(atoms)
     positions = atoms.get_positions()
-    unique_symbols = sorted(set(atoms.get_chemical_symbols()))
+    symbols = atoms.get_chemical_symbols()
+    n_atoms = len(atoms)
+    unique_symbols = sorted(set(symbols))
     atom_types = {symbol: i + 1 for i, symbol in enumerate(unique_symbols)}
 
-    print(f"Atom types in {pdb_file}: {atom_types}")
-
-    # Extract box dimensions
     cell = atoms.get_cell()
     xlo, xhi = 0.0, cell[0, 0]
     ylo, yhi = 0.0, cell[1, 1]
     zlo, zhi = 0.0, cell[2, 2]
 
-    # Track molecules for bond/angle detection
     molecule_dict = defaultdict(list)
-    for i, molecule_id in enumerate(molecule_ids):
-        molecule_dict[molecule_id].append(i + 1)
+    for i, mol_id in enumerate(molecule_ids):
+        molecule_dict[mol_id].append(i + 1)
 
-    # Estimate bonds and angles based on molecule size
     n_bonds, n_angles = 0, 0
-    for molecule_id, atom_indices in molecule_dict.items():
-        if len(atom_indices) == 3:  # Assume H-O-H water molecule
+    for mol_atoms in molecule_dict.values():
+        if len(mol_atoms) == 3:
             n_bonds += 2
             n_angles += 1
 
-    n_carbon = len(molecule_dict[1])
+    n_carbon = len([i for i in molecule_dict[1] if symbols[i - 1] == 'C'])
 
-    # Write the LAMMPS data file
+    # === Functional group processing (optional) ===
+    fg_charge_map = {fg.name.value: fg.charges for fg in func_groups}
+    c_fg_contributions = defaultdict(float)
+
+    if func_groups:
+        mol1_indices = [i for i, mid in enumerate(molecule_ids) if mid == 1]
+        c_indices = [i for i in mol1_indices if symbols[i] == 'C']
+        o_indices = [i for i in mol1_indices if symbols[i] == 'O']
+        h_indices = [i for i in mol1_indices if symbols[i] == 'H']
+
+        c_pos = np.array([positions[i] for i in c_indices])
+        o_pos = np.array([positions[i] for i in o_indices])
+        h_pos = np.array([positions[i] for i in h_indices])
+
+        tree_C = cKDTree(c_pos)
+        tree_H = cKDTree(h_pos)
+
+        for o_idx, o_xyz in zip(o_indices, o_pos):
+            c_near = tree_C.query_ball_point(o_xyz, 1.6)
+            h_near = tree_H.query_ball_point(o_xyz, 1.2)
+
+            if len(h_near) == 1 and len(c_near) == 1:
+                c_global = c_indices[c_near[0]]
+                c_fg_contributions[c_global] += fg_charge_map.get("OH", {}).get("C", 0.0)
+            elif len(h_near) == 0 and len(c_near) == 2:
+                c1 = c_indices[c_near[0]]
+                c2 = c_indices[c_near[1]]
+                c_fg_contributions[c1] += fg_charge_map.get("O", {}).get("C", 0.0)
+                c_fg_contributions[c2] += fg_charge_map.get("O", {}).get("C", 0.0)
+
+    # === Write the LAMMPS .data file ===
     with open(filename, "w") as f:
         f.write("LAMMPS data file via ASE export with custom charges and vdW parameters\n\n")
         f.write(f"{n_atoms} atoms\n")
@@ -611,53 +741,69 @@ def write_lammps_data_from_pdb(pdb_file, charges, vdw_params, filename="graphene
         f.write(f"{ylo:.6f} {yhi:.6f} ylo yhi\n")
         f.write(f"{zlo:.6f} {zhi:.6f} zlo zhi\n\n")
 
-        # Masses
         f.write("Masses\n\n")
         for symbol, atom_type in atom_types.items():
-            mass = atoms[atoms.get_chemical_symbols().index(symbol)].mass
+            mass = atoms[[s == symbol for s in symbols]][0].mass
             f.write(f"{atom_type} {mass:.4f} # {symbol}\n")
         f.write("\n")
 
-        # Pair Coeffs (LJ parameters)
         f.write("Pair Coeffs\n\n")
         for symbol, atom_type in atom_types.items():
-            epsilon, sigma = vdw_params.get(symbol, (0.0, 0.0))  # Default to 0 if not defined
+            epsilon, sigma = vdw_params.get(symbol, (0.0, 0.0))
             f.write(f"{atom_type} {epsilon:.4f} {sigma:.4f} # {symbol}\n")
         f.write("\n")
 
-        # Bond Coeffs
         f.write("Bond Coeffs\n\n")
         f.write("1 450.0 0.96 # O-H bond (harmonic)\n\n")
-
-        # Angle Coeffs
         f.write("Angle Coeffs\n\n")
         f.write("1 55.0 104.5 # H-O-H angle (harmonic)\n\n")
 
-        # Atoms section
         f.write("Atoms\n\n")
-        for i, (position, symbol, molecule_id) in enumerate(zip(positions, atoms.get_chemical_symbols(), molecule_ids)):
+        count_c = 1
+        for i, (pos, symbol, mol_id) in enumerate(zip(positions, symbols, molecule_ids)):
             atom_type = atom_types[symbol]
-            charge = charges.get(symbol, 0.0)  # Default charge if not provided
-            if (charge > 0 and molecule_id == 1 and i >= n_carbon / 2):
-                charge *= -1
-            f.write(f"{i + 1} {molecule_id} {atom_type} {charge:.4f} {position[0]:.6f} {position[1]:.6f} {position[2]:.6f}\n")
 
-        # Bonds section
+            if mol_id == 1:
+                if func_groups and symbol == "H":
+                    charge = fg_charge_map.get("OH", {}).get("H", charges.get("H", 0.0))
+                elif func_groups and symbol == "O":
+                    is_OH = False
+                    if i > 0 and symbols[i - 1] == "H" and molecule_ids[i - 1] == 1:
+                        is_OH = True
+                    elif i + 1 < len(symbols) and symbols[i + 1] == "H" and molecule_ids[i + 1] == 1:
+                        is_OH = True
+                    if is_OH:
+                        charge = fg_charge_map.get("OH", {}).get("O", charges.get("O", 0.0))
+                    else:
+                        charge = fg_charge_map.get("O", {}).get("O", charges.get("O", 0.0))
+                elif symbol == "C":
+                    count_c += 1
+                    base = charges.get("C", 0.0)
+                    if count_c > n_carbon / 2:
+                        base *= -1
+                    fg = c_fg_contributions.get(i, 0.0)
+                    charge = base + fg
+                else:
+                    charge = charges.get(symbol, 0.0)
+            else:
+                charge = charges.get(symbol, 0.0)
+
+            f.write(f"{i + 1} {mol_id} {atom_type} {charge:.4f} {pos[0]:.6f} {pos[1]:.6f} {pos[2]:.6f}\n")
+
         f.write("\nBonds\n\n")
         bond_id = 1
-        for molecule_id, atom_indices in molecule_dict.items():
-            if len(atom_indices) == 3:
-                f.write(f"{bond_id} 1 {atom_indices[0]} {atom_indices[1]}\n")
+        for mol_atoms in molecule_dict.values():
+            if len(mol_atoms) == 3:
+                f.write(f"{bond_id} 1 {mol_atoms[0]} {mol_atoms[1]}\n")
                 bond_id += 1
-                f.write(f"{bond_id} 1 {atom_indices[0]} {atom_indices[2]}\n")
+                f.write(f"{bond_id} 1 {mol_atoms[0]} {mol_atoms[2]}\n")
                 bond_id += 1
 
-        # Angles section
         f.write("\nAngles\n\n")
         angle_id = 1
-        for molecule_id, atom_indices in molecule_dict.items():
-            if len(atom_indices) == 3:
-                f.write(f"{angle_id} 1 {atom_indices[1]} {atom_indices[0]} {atom_indices[2]}\n")
+        for mol_atoms in molecule_dict.values():
+            if len(mol_atoms) == 3:
+                f.write(f"{angle_id} 1 {mol_atoms[1]} {mol_atoms[0]} {mol_atoms[2]}\n")
                 angle_id += 1
 
     print(f"LAMMPS data file written to {filename}")
@@ -815,11 +961,13 @@ def submit_run(
     ly: float,
     lx_spacing: float,
     layer_spacing: float = 3.35,
+    displace_x: float = 0.0,
     conc_ZnI2: float = 0.0,
     conc_I: float = 0.0,
     density_water: float = 1.0,
     r_vdw: float = 2.0,
     water_thickness = 0.0,
+    func_groups: List[FunctionalGroup] = [],
     hpc_name: str = "hpc_vigra",
     run_files_path: Path = None,
     hpc_tar_path: str = None,
@@ -864,6 +1012,7 @@ def submit_run(
         ly = ly,
         lx_spacing = lx_spacing,
         layer_spacing = layer_spacing,
+        displace_x = displace_x,
         conc_ZnI2 = conc_ZnI2,
         conc_I = conc_I,
         density_water = density_water,
@@ -871,6 +1020,7 @@ def submit_run(
         water_thickness = water_thickness,
         carbon_charge = carbon_charge,
         buffer_pack=buffer_pack,
+        func_groups=func_groups
     )
 
     # run_pack_mol(base_dir=base_dir, folder=folder)
@@ -884,6 +1034,7 @@ def submit_run(
         pdb_file  = os.path.join(base_dir, folder, 'graphene_electrolyte.pdb'),
         charges = force_field_params.charges,
         vdw_params = force_field_params.vdw_params,
+        func_groups= func_groups,
         filename=os.path.join(base_dir, folder, "graphene_electrolyte.data")
     )
 
@@ -930,8 +1081,10 @@ def run_from_config(config: Inputs):
         conc_I=config.conc_I,
         density_water=config.density_water,
         layer_spacing=config.layer_spacing,
+        displace_x=config.displace_x,
         r_vdw=config.r_vdw,
         water_thickness=config.water_thickness,
+        func_groups=config.func_groups,
         buffer_pack=config.buffer_pack,
         hpc_name=config.hpc_name,
         run_files_path=config.run_files_path,

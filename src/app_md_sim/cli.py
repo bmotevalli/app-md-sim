@@ -17,7 +17,7 @@ def run(config_file: str = typer.Argument(..., help="Path to your JSON config fi
 @app.command()
 def sync(config_file: str = typer.Argument(..., help="Path to your JSON config file")):
     """
-    Run a simulation using the parameters in the given JSON config file.
+    This commands syncs your local drive with HPC by downloading back the latest results.
     """
     inputs = Inputs.from_file(config_file)
     
