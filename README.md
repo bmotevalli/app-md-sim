@@ -8,7 +8,9 @@ On windows, you can use Ubuntu WSL to get this set and running.
 
 ```shell
 git clone https://github.com/bmotevalli/app-md-sim.git
+```
 
+```shell
 cd app-md-sim
 ```
 
