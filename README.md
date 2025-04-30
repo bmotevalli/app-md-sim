@@ -44,6 +44,9 @@ Then, run poetry install to set up python's virtual environment.
 
 ```shell
 poetry install
+```
+
+```shell
 source .venv/bin/activate
 ```
 
@@ -54,13 +57,25 @@ packmol on your ubuntu system.
 
 ```shell
 sudo apt update
+```
+
+```shell
 sudo apt install gfortran make git
+```
 
+```shell
 git clone https://github.com/m3g/packmol.git
+```
+
+```shell
 cd packmol
+```
 
+```shell
 make
+```
 
+```shell
 sudo cp packmol /usr/local/bin/
 ```
 
