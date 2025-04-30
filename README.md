@@ -6,66 +6,51 @@ On windows, you can use Ubuntu WSL to get this set and running.
 
 ## Clone the repo
 
+```shell
+git clone https://github.com/bmotevalli/app-md-sim.git
+
+cd app-md-sim
+```
+
 ## Environment set up
 
-### HPC Auth
+### Install Poetry
 
-- create ssh keys
-- add ssh keys to hpc
-- add ssh keys to your local shell
-- add following to your ~/.ssh/config
+poetry is a python package manager. Install it via following steps:
 
 ```shell
-Host <give it a name, e.g. hpc_example>
-    HostName <your hpc address>
-    User <your-username>
-    IdentityFile ~/.ssh/id_rsa_hpc
+curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-You can then login | access hpc: `ssh hpc_example`
+Then, add Poetry to your PATH (if not already set): add below to your ~/.bashrc, ~/.zshrc, or shell profile:
 
-### ❌ Packmol - Windows (depreciated in current version)
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
 
-To set up packmol in Windows, you would need julia.
+Then reload your shell:
 
-- install julia (see https://julialang.org/downloads/platform/)
+```
+source ~/.bashrc  # or ~/.zshrc
+```
+
+**Verify installation:**
+
+```
+poetry --version
+```
+
+Then, run poetry install to set up python's virtual environment.
 
 ```shell
-cd /tmp
-wget https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.4-linux-x86_64.tar.gz
-tar -xvzf julia-1.11.4-linux-x86_64.tar.gz
-sudo mv julia-1.11.4
-sudo ln -s /opt/julia-1.11.4/bin/julia /usr/local/bin/julia
-```
-
-- validate installation: `julia --version`
-- install packmol on julia:
-
-```shell
-julia
-```
-
-Then, in julia
-
-```julia
-import Pkg
-Pkg.add("Packmol")
-```
-
-#### ❌ Integrating julia with python - Windows (depreciated in current version)
-
-Back in python you may need to do following:
-
-- Activate your virtual env
-- enter python's shell: `pyhon`
-- Run following commands:
-
-```python
->>> import julia
->>> julia.install()
+poetry install
+source .venv/bin/activate
 ```
 
 ### ✅ Packmol - Linux
+
+As mentioned earlier, this package depends on Packmol. Use below commands to install
+packmol on your ubuntu system.
 
 ```shell
 sudo apt update
@@ -85,48 +70,29 @@ sudo cp packmol /usr/local/bin/
 packmol
 ```
 
-# Set up Python package
+### HPC Auth (Optional)
 
-## Install Poetry
+With this script, you can generate your model and directly run it on a HPC and sync things back when required.
+This is an optional thing, you can always generate the models locally and then ship them to your HPC. If you
+aim to automate runs, then you would need to set up HPC access to your local machine.
 
-poetry is a python package manager. Install it via following commands:
-
-```shell
-curl -sSL https://install.python-poetry.org | python3 -
-```
-
-Then, add Poetry to your PATH (if not already set): add this to your ~/.bashrc, ~/.zshrc, or shell profile:
-
-```
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Then reload your shell:
-
-```
-source ~/.bashrc  # or ~/.zshrc
-```
-
-**Verify installation:**
-
-```
-poetry --version
-```
-
-## Set up project:
+- create ssh keys
+- add ssh keys to hpc
+- add ssh keys to your local shell
+- add following to your ~/.ssh/config
 
 ```shell
-
-git clone https://github.com/bmotevalli/app-md-sim.git
-
-cd app-md-sim
-
-poetry install
-
-source .venv/bin/activate
+Host <give it a name, e.g. hpc_example>
+    HostName <your hpc address>
+    User <your-username>
+    IdentityFile ~/.ssh/id_rsa_hpc
 ```
 
-Then, you should be able to execute below commands:
+You can then login | access hpc: `ssh hpc_example`
+
+# Usage
+
+After installation and activating the virtual environment you can run following commands:
 
 command: `md-sim --help`
 
