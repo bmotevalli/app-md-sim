@@ -16,7 +16,6 @@ import numpy as np
 from ase import Atoms, Atom
 from ase.io import write as write_ase
 import os
-from julia import Packmol
 from collections import defaultdict
 from ase.io import read
 import re

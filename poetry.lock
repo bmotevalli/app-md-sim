@@ -514,21 +514,6 @@ files = [
 referencing = ">=0.31.0"
 
 [[package]]
-name = "julia"
-version = "0.6.2"
-description = "Julia/Python bridge with IPython support."
-optional = false
-python-versions = ">=3.4"
-groups = ["main"]
-files = [
-    {file = "julia-0.6.2-py2.py3-none-any.whl", hash = "sha256:90752f71376fdb9919439d20496c2dab24486dfa4fe8a831d6dd14a1bcbc04d1"},
-    {file = "julia-0.6.2.tar.gz", hash = "sha256:35eefc030671392b79ba0e1898b7103ed1286ad044783c4cadc99d4401c368e3"},
-]
-
-[package.extras]
-test = ["ipython", "mock", "numpy", "pytest (>=4.4)"]
-
-[[package]]
 name = "kiwisolver"
 version = "1.4.8"
 description = "A fast implementation of the Cassowary constraint solver"
@@ -1832,4 +1817,4 @@ watchmedo = ["PyYAML (>=3.10)"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "3c8a696da4c3ca5e41e017b1f5413e8d8229205f581ad6c883db3205f555b3b5"
+content-hash = "a3d7e2e70dba7e58c00e9a3e1ae03843c0c19ea08ca8274ca4ff0f1e9c86dd34"

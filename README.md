@@ -1,5 +1,9 @@
 # Getting Started
 
+This scripts depends on Packmol, hence, you'll need to run on a linux system.
+
+On windows, you can use Ubuntu WSL to get this set and running.
+
 ## Clone the repo
 
 ## Environment set up
@@ -20,9 +24,9 @@ Host <give it a name, e.g. hpc_example>
 
 You can then login | access hpc: `ssh hpc_example`
 
-### Packmol
+### ❌ Packmol - Windows (depreciated in current version)
 
-To set up packmol, you would need julia.
+To set up packmol in Windows, you would need julia.
 
 - install julia (see https://julialang.org/downloads/platform/)
 
@@ -48,7 +52,7 @@ import Pkg
 Pkg.add("Packmol")
 ```
 
-### Integrating julia with python
+#### ❌ Integrating julia with python - Windows (depreciated in current version)
 
 Back in python you may need to do following:
 
@@ -61,7 +65,68 @@ Back in python you may need to do following:
 >>> julia.install()
 ```
 
-# RUN CLI
+### ✅ Packmol - Linux
+
+```shell
+sudo apt update
+sudo apt install gfortran make git
+
+git clone https://github.com/m3g/packmol.git
+cd packmol
+
+make
+
+sudo cp packmol /usr/local/bin/
+```
+
+**verify installation:**
+
+```shell
+packmol
+```
+
+# Set up Python package
+
+## Install Poetry
+
+poetry is a python package manager. Install it via following commands:
+
+```shell
+curl -sSL https://install.python-poetry.org | python3 -
+```
+
+Then, add Poetry to your PATH (if not already set): add this to your ~/.bashrc, ~/.zshrc, or shell profile:
+
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload your shell:
+
+```
+source ~/.bashrc  # or ~/.zshrc
+```
+
+**Verify installation:**
+
+```
+poetry --version
+```
+
+## Set up project:
+
+```shell
+
+git clone https://github.com/bmotevalli/app-md-sim.git
+
+cd app-md-sim
+
+poetry install
+
+source .venv/bin/activate
+```
+
+Then, you should be able to execute below commands:
 
 command: `md-sim --help`
 
